@@ -88,10 +88,11 @@ def generate_story(theme: str, character: str, background: str, tone: str) -> di
 def generate_panel_image(prompt: str, character: str, ref_image=None) -> Image.Image:
     """1コマの画像を生成"""
     full_prompt = (
-        f"single manga panel illustration, one scene only, NOT a comic strip, "
+        f"single full-color manga panel illustration, one scene only, NOT a comic strip, "
         f"character: {character}, "
         f"scene: {prompt}, "
-        f"clean line art, white background, expressive, Japanese manga style, "
+        f"vibrant colors, colorful, clean line art with color fill, white background, "
+        f"expressive, Japanese manga style, full color illustration, "
         f"no text, no speech bubbles in image, single image only"
     )
     if ref_image is not None:
