@@ -53,6 +53,15 @@ BORDER = 6
 FONT_SIZE = 22
 BUBBLE_PADDING = 12
 
+# 吹き出しスタイル: (rel_x_pct, rel_y_pct, bg_color, outline_color, radius)
+# コマ番号(0〜3)でローテーション
+BUBBLE_PRESETS = [
+    (0.55, 0.04, "#FFFFFF", "#222222", 12),   # 右上・白（通常）
+    (0.04, 0.04, "#FFFDE7", "#E65100", 8),    # 左上・黄（驚き）
+    (0.55, 0.62, "#E3F2FD", "#1565C0", 12),   # 右下・水色（落ち着き）
+    (0.04, 0.62, "#FCE4EC", "#AD1457", 16),   # 左下・ピンク（やさしさ）
+]
+
 
 def generate_story(theme: str, character: str, background: str, tone: str) -> dict:
     """GPT-4oで四コマのストーリーを生成"""
@@ -85,13 +94,16 @@ def generate_story(theme: str, character: str, background: str, tone: str) -> di
     return json.loads(resp.choices[0].message.content)
 
 
-def generate_panel_image(prompt: str, character: str, ref_image=None) -> Image.Image:
+def generate_panel_image(prompt: str, character: str, background: str = "",
+                         ref_image=None) -> Image.Image:
     """1コマの画像を生成"""
+    bg_clause = f"background setting: {background}, " if background else ""
     full_prompt = (
         f"single full-color manga panel illustration, one scene only, NOT a comic strip, "
         f"character: {character}, "
         f"scene: {prompt}, "
-        f"vibrant colors, colorful, clean line art with color fill, white background, "
+        f"{bg_clause}"
+        f"vibrant colors, colorful, detailed environment background, "
         f"expressive, Japanese manga style, full color illustration, "
         f"no text, no speech bubbles in image, single image only"
     )
@@ -139,25 +151,28 @@ def wrap_text(text: str, max_width: int, font) -> list[str]:
     return lines
 
 
-def add_bubble(draw: ImageDraw.ImageDraw, text: str, rel_x: int, rel_y: int,
-               font, y_offset: int):
-    """吹き出しを描画。rel_x/rel_y はパネル左上からの相対座標。"""
+def add_bubble(draw: ImageDraw.ImageDraw, text: str, y_offset: int,
+               font, panel_index: int):
+    """吹き出しをパネルに描画。スタイルはコマ番号でローテーション。"""
     if not text:
         return
+    rel_x_pct, rel_y_pct, bg_color, outline_color, radius = BUBBLE_PRESETS[panel_index % 4]
     lines = wrap_text(text, 180, font)
     line_h = font.getbbox("A")[3] + 4
     w = max(font.getbbox(l)[2] for l in lines) + BUBBLE_PADDING * 2
     h = line_h * len(lines) + BUBBLE_PADDING * 2
 
-    # パネル内に収める（絶対座標に変換）
+    rel_x = int(PANEL_W * rel_x_pct)
+    rel_y = int(PANEL_H * rel_y_pct)
+
     x = BORDER + max(4, min(rel_x, PANEL_W - w - 4))
     y = y_offset + max(4, min(rel_y, PANEL_H - h - 4))
 
-    draw.rounded_rectangle([x, y, x + w, y + h], radius=10,
-                            fill="white", outline="black", width=2)
+    draw.rounded_rectangle([x, y, x + w, y + h], radius=radius,
+                            fill=bg_color, outline=outline_color, width=2)
     for i, line in enumerate(lines):
         draw.text((x + BUBBLE_PADDING, y + BUBBLE_PADDING + i * line_h),
-                  line, fill="black", font=font)
+                  line, fill="#222222", font=font)
 
 
 def compose_manga(panels_data: list, panel_images: list[Image.Image]) -> Image.Image:
@@ -177,10 +192,10 @@ def compose_manga(panels_data: list, panel_images: list[Image.Image]) -> Image.I
         draw.rectangle([BORDER, y_offset, BORDER + PANEL_W - 1, y_offset + PANEL_H - 1],
                         outline="black", width=BORDER)
 
-        # セリフ吹き出し（rel_x/rel_y はパネル内の相対座標）
+        # セリフ吹き出し
         dialogue = pdata.get("dialogue", "")
         if dialogue:
-            add_bubble(draw, dialogue, PANEL_W - 200, 10, font, y_offset)
+            add_bubble(draw, dialogue, y_offset, font, i)
 
         # キャプション（ナレーション）
         caption = pdata.get("caption", "")
@@ -236,7 +251,7 @@ if st.button("🚀 四コマ漫画を生成する", type="primary", use_containe
     preview_cols = st.columns(4)
     for i, pdata in enumerate(panels_data):
         status.text(f"🎨 {i+1}コマ目を描いています…")
-        img = generate_panel_image(pdata["scene"], character, ref_image)
+        img = generate_panel_image(pdata["scene"], character, background, ref_image)
         panel_images.append(img)
         with preview_cols[i]:
             st.image(img, caption=f"{i+1}コマ目", use_container_width=True)
