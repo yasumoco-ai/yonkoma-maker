@@ -138,8 +138,9 @@ def wrap_text(text: str, max_width: int, font) -> list[str]:
     return lines
 
 
-def add_bubble(draw: ImageDraw.ImageDraw, text: str, x: int, y: int, font):
-    """吹き出しを描画"""
+def add_bubble(draw: ImageDraw.ImageDraw, text: str, rel_x: int, rel_y: int,
+               font, y_offset: int):
+    """吹き出しを描画。rel_x/rel_y はパネル左上からの相対座標。"""
     if not text:
         return
     lines = wrap_text(text, 180, font)
@@ -147,9 +148,9 @@ def add_bubble(draw: ImageDraw.ImageDraw, text: str, x: int, y: int, font):
     w = max(font.getbbox(l)[2] for l in lines) + BUBBLE_PADDING * 2
     h = line_h * len(lines) + BUBBLE_PADDING * 2
 
-    # 画面内に収める
-    x = max(4, min(x, PANEL_W - w - 4))
-    y = max(4, min(y, PANEL_H - h - 4))
+    # パネル内に収める（絶対座標に変換）
+    x = BORDER + max(4, min(rel_x, PANEL_W - w - 4))
+    y = y_offset + max(4, min(rel_y, PANEL_H - h - 4))
 
     draw.rounded_rectangle([x, y, x + w, y + h], radius=10,
                             fill="white", outline="black", width=2)
@@ -175,10 +176,10 @@ def compose_manga(panels_data: list, panel_images: list[Image.Image]) -> Image.I
         draw.rectangle([BORDER, y_offset, BORDER + PANEL_W - 1, y_offset + PANEL_H - 1],
                         outline="black", width=BORDER)
 
-        # セリフ吹き出し
+        # セリフ吹き出し（rel_x/rel_y はパネル内の相対座標）
         dialogue = pdata.get("dialogue", "")
         if dialogue:
-            add_bubble(draw, dialogue, PANEL_W - 200, y_offset + 10, font)
+            add_bubble(draw, dialogue, PANEL_W - 200, 10, font, y_offset)
 
         # キャプション（ナレーション）
         caption = pdata.get("caption", "")
