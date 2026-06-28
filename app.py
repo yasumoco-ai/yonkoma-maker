@@ -63,21 +63,39 @@ BUBBLE_PRESETS = [
 ]
 
 
-def generate_story(theme: str, character: str, background: str, tone: str) -> dict:
-    """GPT-4oで四コマのストーリーを生成"""
-    sys_prompt = """あなたは四コマ漫画の脚本家です。
-指定されたテーマ・キャラクター・背景・トーンで、オチのある四コマ漫画のストーリーを考えてください。
-必ず以下のJSON形式で返してください（他の文章は不要）：
+def generate_stories(theme: str, character: str, background: str, tone: str) -> list[dict]:
+    """GPT-4oで起承転結のある四コマストーリーを3パターン生成"""
+    sys_prompt = """あなたは日本の人気四コマ漫画の脚本家です。
+以下のルールで【3パターン】のストーリーを考えてください。
+
+【必須ルール】
+- 起承転結の構成を厳守：1コマ(起)→2コマ(承)→3コマ(転：予想外の展開)→4コマ(結：誰でもクスッとなるオチ)
+- 「転」は読者が予想しないどんでん返しや意外な視点にする
+- 「結」のオチはシンプルで日常的な共感を含む笑い。難しいギャグは不可
+- セリフは短くインパクト重視（15字以内）
+- 3パターンはそれぞれ異なるアプローチでオチを変える
+
+必ず以下のJSON形式のみで返してください：
 {
-  "title": "タイトル",
-  "panels": [
+  "stories": [
     {
-      "number": 1,
-      "scene": "シーンの説明（英語で画像生成プロンプトとして使う）",
-      "dialogue": "セリフ（日本語、20字以内）",
-      "caption": "ナレーション（任意、10字以内。不要なら空文字）"
+      "title": "タイトル",
+      "approach": "このストーリーのオチのポイント（20字以内）",
+      "panels": [
+        {
+          "number": 1,
+          "role": "起",
+          "scene": "panel scene description in English for image generation",
+          "dialogue": "セリフ（15字以内）",
+          "caption": "ナレーション（8字以内、不要なら空文字）"
+        },
+        {"number":2,"role":"承","scene":"...","dialogue":"...","caption":""},
+        {"number":3,"role":"転","scene":"...","dialogue":"...","caption":""},
+        {"number":4,"role":"結","scene":"...","dialogue":"...","caption":""}
+      ]
     },
-    ...4コマ分...
+    { ...パターン2... },
+    { ...パターン3... }
   ]
 }"""
     user_msg = f"""テーマ：{theme}
@@ -91,7 +109,8 @@ def generate_story(theme: str, character: str, background: str, tone: str) -> di
                   {"role": "user", "content": user_msg}],
         response_format={"type": "json_object"}
     )
-    return json.loads(resp.choices[0].message.content)
+    data = json.loads(resp.choices[0].message.content)
+    return data.get("stories", [])
 
 
 def generate_panel_image(prompt: str, character: str, background: str = "",
@@ -230,47 +249,75 @@ if not theme or not character:
     st.warning("テーマとキャラクター設定を入力してください。")
     st.stop()
 
-if st.button("🚀 四コマ漫画を生成する", type="primary", use_container_width=True):
-    progress = st.progress(0)
-    status = st.empty()
+# セッションステート初期化
+if "stories" not in st.session_state:
+    st.session_state["stories"] = []
+if "selected_story_idx" not in st.session_state:
+    st.session_state["selected_story_idx"] = 0
 
-    # Step 1: ストーリー生成
-    status.text("📝 ストーリーを考えています…")
-    story = generate_story(theme, character, background, tone)
-    progress.progress(0.1)
+# ── STEP 1: ストーリーを考える ──
+if st.button("📝 ストーリーを考える（3パターン）", use_container_width=True):
+    with st.spinner("起承転結のストーリーを3パターン考えています…"):
+        st.session_state["stories"] = generate_stories(theme, character, background, tone)
+        st.session_state["selected_story_idx"] = 0
 
-    title = story.get("title", "四コマ漫画")
-    panels_data = story.get("panels", [])
+# ストーリー選択UI
+if st.session_state["stories"]:
+    st.divider()
+    st.subheader("📋 ストーリーを選んでください")
 
-    with st.expander(f"📋 生成されたストーリー「{title}」", expanded=True):
-        for p in panels_data:
-            st.markdown(f"**{p['number']}コマ目**：{p.get('dialogue','（セリフなし）')} / {p.get('scene','')[:60]}")
+    options = []
+    for i, s in enumerate(st.session_state["stories"]):
+        options.append(f"パターン{i+1}：{s['title']}　（{s.get('approach','')}）")
 
-    # Step 2: 各コマの画像生成
-    panel_images = []
-    preview_cols = st.columns(4)
-    for i, pdata in enumerate(panels_data):
-        status.text(f"🎨 {i+1}コマ目を描いています…")
-        img = generate_panel_image(pdata["scene"], character, background, ref_image)
-        panel_images.append(img)
-        with preview_cols[i]:
-            st.image(img, caption=f"{i+1}コマ目", use_container_width=True)
-        progress.progress(0.1 + 0.2 * (i + 1))
+    selected = st.radio("", options, index=st.session_state["selected_story_idx"],
+                        label_visibility="collapsed")
+    st.session_state["selected_story_idx"] = options.index(selected)
 
-    # Step 3: 合成
-    status.text("🖼️ 四コマに仕上げています…")
-    manga = compose_manga(panels_data, panel_images)
-    progress.progress(1.0)
-    status.text("✅ 完成！")
+    chosen = st.session_state["stories"][st.session_state["selected_story_idx"]]
+    panels_data = chosen["panels"]
 
-    # 表示 & ダウンロード
-    st.image(manga, caption=title, use_container_width=False, width=400)
+    cols = st.columns(4)
+    roles = {"起": "🟡", "承": "🟢", "転": "🔴", "結": "⭐"}
+    for i, p in enumerate(panels_data):
+        with cols[i]:
+            role = p.get("role", str(i+1))
+            emoji = roles.get(role, "")
+            st.markdown(f"**{emoji}{role}（{i+1}コマ）**")
+            st.markdown(f"「{p.get('dialogue','')}")
+            if p.get("caption"):
+                st.caption(p["caption"])
 
-    buf = io.BytesIO()
-    manga.save(buf, "PNG")
-    st.download_button("📥 PNG をダウンロード", data=buf.getvalue(),
-                        file_name="yonkoma.png", mime="image/png",
-                        use_container_width=True)
+    st.divider()
+
+    # ── STEP 2: 画像生成 ──
+    if st.button("🚀 この内容で四コマ漫画を生成する", type="primary", use_container_width=True):
+        title = chosen.get("title", "四コマ漫画")
+        progress = st.progress(0)
+        status = st.empty()
+
+        panel_images = []
+        preview_cols = st.columns(4)
+        for i, pdata in enumerate(panels_data):
+            status.text(f"🎨 {i+1}コマ目（{pdata.get('role','')}）を描いています…")
+            img = generate_panel_image(pdata["scene"], character, background, ref_image)
+            panel_images.append(img)
+            with preview_cols[i]:
+                st.image(img, caption=f"{i+1}コマ目", use_container_width=True)
+            progress.progress(0.2 * (i + 1))
+
+        status.text("🖼️ 四コマに仕上げています…")
+        manga = compose_manga(panels_data, panel_images)
+        progress.progress(1.0)
+        status.text("✅ 完成！")
+
+        st.image(manga, caption=title, use_container_width=False, width=400)
+
+        buf = io.BytesIO()
+        manga.save(buf, "PNG")
+        st.download_button("📥 PNG をダウンロード", data=buf.getvalue(),
+                            file_name="yonkoma.png", mime="image/png",
+                            use_container_width=True)
 
 st.divider()
 st.caption("Powered by OpenAI gpt-4o + gpt-image-1")
