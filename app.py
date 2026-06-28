@@ -1,8 +1,31 @@
 import streamlit as st
 from openai import OpenAI
 from PIL import Image, ImageDraw, ImageFont
-import io, base64, json, zipfile, textwrap
+import io, base64, json, os, urllib.request
 from pathlib import Path
+
+
+def get_japanese_font(size: int):
+    """macOS・Linux両対応の日本語フォントを返す"""
+    mac_path = "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc"
+    if os.path.exists(mac_path):
+        try:
+            return ImageFont.truetype(mac_path, size)
+        except Exception:
+            pass
+    font_cache = "/tmp/NotoSansJP.ttf"
+    if not os.path.exists(font_cache):
+        try:
+            urllib.request.urlretrieve(
+                "https://github.com/google/fonts/raw/main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf",
+                font_cache,
+            )
+        except Exception:
+            return ImageFont.load_default()
+    try:
+        return ImageFont.truetype(font_cache, size)
+    except Exception:
+        return ImageFont.load_default()
 
 st.set_page_config(page_title="四コマ漫画メーカー", page_icon="📖", layout="wide")
 st.title("📖 四コマ漫画メーカー")
@@ -65,11 +88,11 @@ def generate_story(theme: str, character: str, background: str, tone: str) -> di
 def generate_panel_image(prompt: str, character: str, ref_image=None) -> Image.Image:
     """1コマの画像を生成"""
     full_prompt = (
-        f"manga-style illustration, 4-panel comic panel, "
+        f"single manga panel illustration, one scene only, NOT a comic strip, "
         f"character: {character}, "
         f"scene: {prompt}, "
         f"clean line art, white background, expressive, Japanese manga style, "
-        f"no text, no speech bubbles in image"
+        f"no text, no speech bubbles in image, single image only"
     )
     if ref_image is not None:
         buf = io.BytesIO()
@@ -90,7 +113,7 @@ def generate_panel_image(prompt: str, character: str, ref_image=None) -> Image.I
             n=1,
         )
     img_bytes = base64.b64decode(resp.data[0].b64_json)
-    img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
     return img.resize((PANEL_W, PANEL_H), Image.LANCZOS)
 
 
@@ -141,12 +164,8 @@ def compose_manga(panels_data: list, panel_images: list[Image.Image]) -> Image.I
     canvas = Image.new("RGB", (PANEL_W + BORDER * 2, total_h), "white")
     draw = ImageDraw.Draw(canvas)
 
-    try:
-        font = ImageFont.truetype("/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc", FONT_SIZE)
-        font_sm = ImageFont.truetype("/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc", 16)
-    except Exception:
-        font = ImageFont.load_default()
-        font_sm = font
+    font = get_japanese_font(FONT_SIZE)
+    font_sm = get_japanese_font(16)
 
     for i, (pdata, img) in enumerate(zip(panels_data, panel_images)):
         y_offset = BORDER + i * (PANEL_H + BORDER)
