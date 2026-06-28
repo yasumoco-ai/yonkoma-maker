@@ -53,13 +53,17 @@ BORDER = 6
 FONT_SIZE = 22
 BUBBLE_PADDING = 12
 
-# 吹き出しスタイル: (rel_x_pct, rel_y_pct, bg_color, outline_color, radius)
-# コマ番号(0〜3)でローテーション
+# 吹き出しスタイル: (rel_x_pct, rel_y_pct, bg_color, outline_color, shape)
+# shape: "round" / "oval" / "spiky" / "thought" / "bold"
 BUBBLE_PRESETS = [
-    (0.55, 0.04, "#FFFFFF", "#222222", 12),   # 右上・白（通常）
-    (0.04, 0.04, "#FFFDE7", "#E65100", 8),    # 左上・黄（驚き）
-    (0.55, 0.62, "#E3F2FD", "#1565C0", 12),   # 右下・水色（落ち着き）
-    (0.04, 0.62, "#FCE4EC", "#AD1457", 16),   # 左下・ピンク（やさしさ）
+    (0.54, 0.04, "#FFFFFF", "#222222", "round"),    # 右上・白・通常
+    (0.04, 0.04, "#FFFDE7", "#E65100", "spiky"),    # 左上・黄・叫び
+    (0.54, 0.60, "#E3F2FD", "#1565C0", "oval"),     # 右下・水色・ふんわり
+    (0.04, 0.60, "#FCE4EC", "#AD1457", "thought"),  # 左下・ピンク・思考
+    (0.28, 0.04, "#F3E5F5", "#6A1B9A", "bold"),     # 中上・紫・強調
+    (0.04, 0.30, "#E8F5E9", "#2E7D32", "round"),    # 左中・緑
+    (0.54, 0.30, "#FFF3E0", "#BF360C", "spiky"),    # 右中・オレンジ・叫び
+    (0.28, 0.60, "#E1F5FE", "#01579B", "oval"),     # 中下・青
 ]
 
 
@@ -122,8 +126,10 @@ def generate_panel_image(prompt: str, character: str, background: str = "",
         f"character: {character}, "
         f"scene: {prompt}, "
         f"{bg_clause}"
+        f"exaggerated dynamic pose, over-the-top facial expression, dramatic body language, "
+        f"very expressive anime-style exaggeration, big reactions, "
         f"vibrant colors, colorful, detailed environment background, "
-        f"expressive, Japanese manga style, full color illustration, "
+        f"Japanese manga style, full color illustration, "
         f"no text, no speech bubbles in image, single image only"
     )
     if ref_image is not None:
@@ -170,12 +176,42 @@ def wrap_text(text: str, max_width: int, font) -> list[str]:
     return lines
 
 
+def _draw_bubble_shape(draw, x, y, w, h, bg, outline, shape):
+    """形状別に吹き出しを描画"""
+    import math
+    if shape == "spiky":
+        cx, cy = x + w // 2, y + h // 2
+        rx, ry = w // 2 + 10, h // 2 + 10
+        n = 14
+        pts = []
+        for k in range(n * 2):
+            a = math.pi * 2 * k / (n * 2) - math.pi / 2
+            ca, sa = math.cos(a), math.sin(a)
+            if k % 2 == 0:
+                r = math.sqrt(rx**2 + ry**2) + 14
+            else:
+                r = (rx * ry) / math.sqrt((ry * ca)**2 + (rx * sa)**2) - 4
+            pts.append((cx + r * ca, cy + r * sa))
+        draw.polygon(pts, fill=bg, outline=outline)
+    elif shape == "oval":
+        draw.ellipse([x - 6, y, x + w + 6, y + h], fill=bg, outline=outline, width=2)
+    elif shape == "thought":
+        draw.ellipse([x, y, x + w, y + h], fill=bg, outline=outline, width=2)
+        for dx, dy, r in [(w // 2, h + 6, 7), (w // 2 - 6, h + 16, 5), (w // 2 - 10, h + 25, 3)]:
+            draw.ellipse([x + dx - r, y + dy - r, x + dx + r, y + dy + r],
+                         fill=bg, outline=outline, width=2)
+    elif shape == "bold":
+        draw.rectangle([x, y, x + w, y + h], fill=bg, outline=outline, width=4)
+    else:  # round (default)
+        draw.rounded_rectangle([x, y, x + w, y + h], radius=12, fill=bg, outline=outline, width=2)
+
+
 def add_bubble(draw: ImageDraw.ImageDraw, text: str, y_offset: int,
                font, panel_index: int):
     """吹き出しをパネルに描画。スタイルはコマ番号でローテーション。"""
     if not text:
         return
-    rel_x_pct, rel_y_pct, bg_color, outline_color, radius = BUBBLE_PRESETS[panel_index % 4]
+    rel_x_pct, rel_y_pct, bg_color, outline_color, shape = BUBBLE_PRESETS[panel_index % len(BUBBLE_PRESETS)]
     lines = wrap_text(text, 180, font)
     line_h = font.getbbox("A")[3] + 4
     w = max(font.getbbox(l)[2] for l in lines) + BUBBLE_PADDING * 2
@@ -187,8 +223,7 @@ def add_bubble(draw: ImageDraw.ImageDraw, text: str, y_offset: int,
     x = BORDER + max(4, min(rel_x, PANEL_W - w - 4))
     y = y_offset + max(4, min(rel_y, PANEL_H - h - 4))
 
-    draw.rounded_rectangle([x, y, x + w, y + h], radius=radius,
-                            fill=bg_color, outline=outline_color, width=2)
+    _draw_bubble_shape(draw, x, y, w, h, bg_color, outline_color, shape)
     for i, line in enumerate(lines):
         draw.text((x + BUBBLE_PADDING, y + BUBBLE_PADDING + i * line_h),
                   line, fill="#222222", font=font)
